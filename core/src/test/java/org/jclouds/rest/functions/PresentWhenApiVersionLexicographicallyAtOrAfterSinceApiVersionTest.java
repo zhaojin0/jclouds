@@ -118,6 +118,7 @@ public class PresentWhenApiVersionLexicographicallyAtOrAfterSinceApiVersionTest 
       assertEquals(fn.load(getVpcApi()), Optional.absent());
    }
 
+   @Test(invocationCount = 3, successPercentage = 66)
    public void testCacheIsFasterWhenNoAnnotationPresent() {
       InvocationSuccess keyPairApi = getKeyPairApi();
       ImplicitOptionalConverter fn = forApiVersion("2011-07-15");
