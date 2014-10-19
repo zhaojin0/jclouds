@@ -133,6 +133,7 @@ public class PresentWhenApiVersionLexicographicallyAtOrAfterSinceApiVersionTest 
             "lookup cache saved " + (first - cached) + " microseconds when no annotation present");
    }
 
+   @Test(invocationCount = 3, successPercentage = 66)
    public void testCacheIsFasterWhenAnnotationPresent() {
       InvocationSuccess floatingIpApi = getKeyPairApi();
       ImplicitOptionalConverter fn = forApiVersion("2011-07-15");
