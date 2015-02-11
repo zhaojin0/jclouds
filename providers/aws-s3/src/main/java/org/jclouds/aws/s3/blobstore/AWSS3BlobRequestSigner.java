@@ -35,7 +35,6 @@ import org.jclouds.reflect.Invocation;
 import org.jclouds.rest.internal.RestAnnotationProcessor;
 import org.jclouds.s3.blobstore.S3BlobRequestSigner;
 import org.jclouds.s3.blobstore.functions.BlobToObject;
-import org.jclouds.s3.filters.RequestAuthorizeSignature;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Supplier;
@@ -43,11 +42,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.net.HttpHeaders;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
+import static org.jclouds.s3.filters.RequestAuthorizeSignature.RequestAuthorizeSignatureV2;
 
 public class AWSS3BlobRequestSigner extends S3BlobRequestSigner<AWSS3Client> {
    public static final String TEMPORARY_SIGNATURE_PARAM = "Signature";
 
-   private final RequestAuthorizeSignature authSigner;
+   private final RequestAuthorizeSignatureV2 authSigner;
    private final String identity;
    private final DateService dateService;
    private final Provider<String> timeStampProvider;
@@ -56,7 +56,7 @@ public class AWSS3BlobRequestSigner extends S3BlobRequestSigner<AWSS3Client> {
    public AWSS3BlobRequestSigner(RestAnnotationProcessor processor, BlobToObject blobToObject,
          BlobToHttpGetOptions blob2HttpGetOptions, Class<AWSS3Client> interfaceClass,
          @org.jclouds.location.Provider Supplier<Credentials> credentials,
-         RequestAuthorizeSignature authSigner, @TimeStamp Provider<String> timeStampProvider,
+         RequestAuthorizeSignatureV2 authSigner, @TimeStamp Provider<String> timeStampProvider,
          DateService dateService) throws SecurityException, NoSuchMethodException {
       super(processor, blobToObject, blob2HttpGetOptions, interfaceClass);
       this.authSigner = authSigner;

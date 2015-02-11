@@ -68,191 +68,192 @@ import com.google.common.net.HttpHeaders;
 /**
  * Signs the S3 request.
  */
-@Singleton
-public class RequestAuthorizeSignature implements HttpRequestFilter, RequestSigner {
 
-   private static final Collection<String> FIRST_HEADERS_TO_SIGN = ImmutableList.of(HttpHeaders.DATE);
+public interface RequestAuthorizeSignature extends HttpRequestFilter {
+    @Singleton
+    public static class RequestAuthorizeSignatureV2 implements RequestAuthorizeSignature, RequestSigner {
+        private static final Collection<String> FIRST_HEADERS_TO_SIGN = ImmutableList.of(HttpHeaders.DATE);
 
-   private static final Set<String> SIGNED_PARAMETERS = ImmutableSet.of("acl", "torrent", "logging", "location", "policy",
+        private static final Set<String> SIGNED_PARAMETERS = ImmutableSet.of("acl", "torrent", "logging", "location", "policy",
             "requestPayment", "versioning", "versions", "versionId", "notification", "uploadId", "uploads",
             "partNumber", "website", "response-content-type", "response-content-language", "response-expires",
             "response-cache-control", "response-content-disposition", "response-content-encoding", "delete");
 
-   private final SignatureWire signatureWire;
-   private final Supplier<Credentials> creds;
-   private final Provider<String> timeStampProvider;
-   private final Crypto crypto;
-   private final HttpUtils utils;
+        private final SignatureWire signatureWire;
+        private final Supplier<Credentials> creds;
+        private final Provider<String> timeStampProvider;
+        private final Crypto crypto;
+        private final HttpUtils utils;
 
-   @Resource
-   @Named(Constants.LOGGER_SIGNATURE)
-   Logger signatureLog = Logger.NULL;
+        @Resource
+        @Named(Constants.LOGGER_SIGNATURE)
+        Logger signatureLog = Logger.NULL;
 
-   private final String authTag;
-   private final String headerTag;
-   private final String servicePath;
-   private final boolean isVhostStyle;
+        private final String authTag;
+        private final String headerTag;
+        private final String servicePath;
+        private final boolean isVhostStyle;
 
-   @Inject
-   public RequestAuthorizeSignature(SignatureWire signatureWire, @Named(PROPERTY_AUTH_TAG) String authTag,
-            @Named(PROPERTY_S3_VIRTUAL_HOST_BUCKETS) boolean isVhostStyle,
-            @Named(PROPERTY_S3_SERVICE_PATH) String servicePath, @Named(PROPERTY_HEADER_TAG) String headerTag,
-            @org.jclouds.location.Provider Supplier<Credentials> creds,
-            @TimeStamp Provider<String> timeStampProvider, Crypto crypto, HttpUtils utils) {
-      this.isVhostStyle = isVhostStyle;
-      this.servicePath = servicePath;
-      this.headerTag = headerTag;
-      this.authTag = authTag;
-      this.signatureWire = signatureWire;
-      this.creds = creds;
-      this.timeStampProvider = timeStampProvider;
-      this.crypto = crypto;
-      this.utils = utils;
-   }
+        @Inject
+        public RequestAuthorizeSignatureV2(SignatureWire signatureWire, @Named(PROPERTY_AUTH_TAG) String authTag,
+                                           @Named(PROPERTY_S3_VIRTUAL_HOST_BUCKETS) boolean isVhostStyle,
+                                           @Named(PROPERTY_S3_SERVICE_PATH) String servicePath, @Named(PROPERTY_HEADER_TAG) String headerTag,
+                                           @org.jclouds.location.Provider Supplier<Credentials> creds,
+                                           @TimeStamp Provider<String> timeStampProvider, Crypto crypto, HttpUtils utils) {
+            this.isVhostStyle = isVhostStyle;
+            this.servicePath = servicePath;
+            this.headerTag = headerTag;
+            this.authTag = authTag;
+            this.signatureWire = signatureWire;
+            this.creds = creds;
+            this.timeStampProvider = timeStampProvider;
+            this.crypto = crypto;
+            this.utils = utils;
+        }
 
-   public HttpRequest filter(HttpRequest request) throws HttpException {
-      request = replaceDateHeader(request);
-      Credentials current = creds.get();
-      if (current instanceof SessionCredentials) {
-         request = replaceSecurityTokenHeader(request, SessionCredentials.class.cast(current));
-      }
-      String signature = calculateSignature(createStringToSign(request));
-      request = replaceAuthorizationHeader(request, signature);
-      utils.logRequest(signatureLog, request, "<<");
-      return request;
-   }
-
-   HttpRequest replaceSecurityTokenHeader(HttpRequest request, SessionCredentials current) {
-      return request.toBuilder().replaceHeader("x-amz-security-token", current.getSessionToken()).build();
-   }
-
-   protected HttpRequest replaceAuthorizationHeader(HttpRequest request, String signature) {
-      request = request.toBuilder()
-            .replaceHeader(HttpHeaders.AUTHORIZATION, authTag + " " + creds.get().identity + ":" + signature).build();
-      return request;
-   }
-
-   HttpRequest replaceDateHeader(HttpRequest request) {
-      request = request.toBuilder().replaceHeader(HttpHeaders.DATE, timeStampProvider.get()).build();
-      return request;
-   }
-
-   public String createStringToSign(HttpRequest request) {
-      utils.logRequest(signatureLog, request, ">>");
-      SortedSetMultimap<String, String> canonicalizedHeaders = TreeMultimap.create();
-      StringBuilder buffer = new StringBuilder();
-      // re-sign the request
-      appendMethod(request, buffer);
-      appendPayloadMetadata(request, buffer);
-      appendHttpHeaders(request, canonicalizedHeaders);
-
-      // Remove default date timestamp if "x-amz-date" is set.
-      if (canonicalizedHeaders.containsKey("x-" + headerTag + "-date")) {
-         canonicalizedHeaders.removeAll("date");
-      }
-
-      appendAmzHeaders(canonicalizedHeaders, buffer);
-      appendBucketName(request, buffer);
-      appendUriPath(request, buffer);
-      if (signatureWire.enabled())
-         signatureWire.output(buffer.toString());
-      return buffer.toString();
-   }
-
-   String calculateSignature(String toSign) throws HttpException {
-      String signature = sign(toSign);
-      if (signatureWire.enabled())
-         signatureWire.input(toInputStream(signature));
-      return signature;
-   }
-
-   public String sign(String toSign) {
-      try {
-         ByteProcessor<byte[]> hmacSHA1 = asByteProcessor(crypto.hmacSHA1(creds.get().credential.getBytes(UTF_8)));
-         return base64().encode(readBytes(toInputStream(toSign), hmacSHA1));
-      } catch (Exception e) {
-         throw new HttpException("error signing request", e);
-      }
-   }
-
-   void appendMethod(HttpRequest request, StringBuilder toSign) {
-      toSign.append(request.getMethod()).append("\n");
-   }
-
-   @VisibleForTesting
-   void appendAmzHeaders(SortedSetMultimap<String, String> canonicalizedHeaders, StringBuilder toSign) {
-      for (Entry<String, String> header : canonicalizedHeaders.entries()) {
-         String key = header.getKey();
-         if (key.startsWith("x-" + headerTag + "-")) {
-            toSign.append(String.format("%s:%s\n", key.toLowerCase(), header.getValue()));
-         }
-      }
-   }
-
-   void appendPayloadMetadata(HttpRequest request, StringBuilder buffer) {
-      // note that we fall back to headers, and some requests such as ?uploads do not have a
-      // payload, yet specify payload related parameters
-      buffer.append(
-               request.getPayload() == null ? Strings.nullToEmpty(request.getFirstHeaderOrNull("Content-MD5")) :
-                        HttpUtils.nullToEmpty(request.getPayload() == null ? null : request.getPayload().getContentMetadata()
-                                 .getContentMD5())).append("\n");
-      buffer.append(
-               Strings.nullToEmpty(request.getPayload() == null ? request.getFirstHeaderOrNull(HttpHeaders.CONTENT_TYPE)
-                        : request.getPayload().getContentMetadata().getContentType())).append("\n");
-      for (String header : FIRST_HEADERS_TO_SIGN)
-         buffer.append(HttpUtils.nullToEmpty(request.getHeaders().get(header))).append("\n");
-   }
-
-   @VisibleForTesting
-   void appendHttpHeaders(HttpRequest request, SortedSetMultimap<String, String> canonicalizedHeaders) {
-      Multimap<String, String> headers = request.getHeaders();
-      for (Entry<String, String> header : headers.entries()) {
-         if (header.getKey() == null)
-            continue;
-         String key = header.getKey().toString().toLowerCase(Locale.getDefault());
-         // Ignore any headers that are not particularly interesting.
-         if (key.equalsIgnoreCase(HttpHeaders.CONTENT_TYPE) || key.equalsIgnoreCase("Content-MD5")
-                  || key.equalsIgnoreCase(HttpHeaders.DATE) || key.startsWith("x-" + headerTag + "-")) {
-            canonicalizedHeaders.put(key, header.getValue());
-         }
-      }
-   }
-
-   @VisibleForTesting
-   void appendBucketName(HttpRequest req, StringBuilder toSign) {
-      String bucketName = S3Utils.getBucketName(req);
-
-      // If we have a payload/bucket/container that is not all lowercase, vhost-style URLs are not an option and must be
-      // automatically converted to their path-based equivalent.  This should only be possible for AWS-S3 since it is
-      // the only S3 implementation configured to allow uppercase payload/bucket/container names.
-      //
-      // http://code.google.com/p/jclouds/issues/detail?id=992
-      if (isVhostStyle && bucketName != null && bucketName.equals(bucketName.toLowerCase()))
-         toSign.append(servicePath).append(bucketName);
-   }
-
-   @VisibleForTesting
-   void appendUriPath(HttpRequest request, StringBuilder toSign) {
-
-      toSign.append(request.getEndpoint().getRawPath());
-
-      // ...however, there are a few exceptions that must be included in the
-      // signed URI.
-      if (request.getEndpoint().getQuery() != null) {
-         Multimap<String, String> params = queryParser().apply(request.getEndpoint().getQuery());
-         char separator = '?';
-         for (String paramName : Ordering.natural().sortedCopy(params.keySet())) {
-            // Skip any parameters that aren't part of the canonical signed string
-            if (!SIGNED_PARAMETERS.contains(paramName))
-               continue;
-            toSign.append(separator).append(paramName);
-            String paramValue = get(params.get(paramName), 0);
-            if (paramValue != null) {
-               toSign.append("=").append(paramValue);
+        public HttpRequest filter(HttpRequest request) throws HttpException {
+            request = replaceDateHeader(request);
+            Credentials current = creds.get();
+            if (current instanceof SessionCredentials) {
+                request = replaceSecurityTokenHeader(request, SessionCredentials.class.cast(current));
             }
-            separator = '&';
-         }
-      }
-   }
+            String signature = calculateSignature(createStringToSign(request));
+            request = replaceAuthorizationHeader(request, signature);
+            utils.logRequest(signatureLog, request, "<<");
+            return request;
+        }
 
+        HttpRequest replaceSecurityTokenHeader(HttpRequest request, SessionCredentials current) {
+            return request.toBuilder().replaceHeader("x-amz-security-token", current.getSessionToken()).build();
+        }
+
+        protected HttpRequest replaceAuthorizationHeader(HttpRequest request, String signature) {
+            request = request.toBuilder()
+                .replaceHeader(HttpHeaders.AUTHORIZATION, authTag + " " + creds.get().identity + ":" + signature).build();
+            return request;
+        }
+
+        HttpRequest replaceDateHeader(HttpRequest request) {
+            request = request.toBuilder().replaceHeader(HttpHeaders.DATE, timeStampProvider.get()).build();
+            return request;
+        }
+
+        public String createStringToSign(HttpRequest request) {
+            utils.logRequest(signatureLog, request, ">>");
+            SortedSetMultimap<String, String> canonicalizedHeaders = TreeMultimap.create();
+            StringBuilder buffer = new StringBuilder();
+            // re-sign the request
+            appendMethod(request, buffer);
+            appendPayloadMetadata(request, buffer);
+            appendHttpHeaders(request, canonicalizedHeaders);
+
+            // Remove default date timestamp if "x-amz-date" is set.
+            if (canonicalizedHeaders.containsKey("x-" + headerTag + "-date")) {
+                canonicalizedHeaders.removeAll("date");
+            }
+
+            appendAmzHeaders(canonicalizedHeaders, buffer);
+            appendBucketName(request, buffer);
+            appendUriPath(request, buffer);
+            if (signatureWire.enabled())
+                signatureWire.output(buffer.toString());
+            return buffer.toString();
+        }
+
+        String calculateSignature(String toSign) throws HttpException {
+            String signature = sign(toSign);
+            if (signatureWire.enabled())
+                signatureWire.input(toInputStream(signature));
+            return signature;
+        }
+
+        public String sign(String toSign) {
+            try {
+                ByteProcessor<byte[]> hmacSHA1 = asByteProcessor(crypto.hmacSHA1(creds.get().credential.getBytes(UTF_8)));
+                return base64().encode(readBytes(toInputStream(toSign), hmacSHA1));
+            } catch (Exception e) {
+                throw new HttpException("error signing request", e);
+            }
+        }
+
+        void appendMethod(HttpRequest request, StringBuilder toSign) {
+            toSign.append(request.getMethod()).append("\n");
+        }
+
+        @VisibleForTesting
+        void appendAmzHeaders(SortedSetMultimap<String, String> canonicalizedHeaders, StringBuilder toSign) {
+            for (Entry<String, String> header : canonicalizedHeaders.entries()) {
+                String key = header.getKey();
+                if (key.startsWith("x-" + headerTag + "-")) {
+                    toSign.append(String.format("%s:%s\n", key.toLowerCase(), header.getValue()));
+                }
+            }
+        }
+
+        void appendPayloadMetadata(HttpRequest request, StringBuilder buffer) {
+            // note that we fall back to headers, and some requests such as ?uploads do not have a
+            // payload, yet specify payload related parameters
+            buffer.append(
+                request.getPayload() == null ? Strings.nullToEmpty(request.getFirstHeaderOrNull("Content-MD5")) :
+                    HttpUtils.nullToEmpty(request.getPayload() == null ? null : request.getPayload().getContentMetadata()
+                        .getContentMD5())).append("\n");
+            buffer.append(
+                Strings.nullToEmpty(request.getPayload() == null ? request.getFirstHeaderOrNull(HttpHeaders.CONTENT_TYPE)
+                    : request.getPayload().getContentMetadata().getContentType())).append("\n");
+            for (String header : FIRST_HEADERS_TO_SIGN)
+                buffer.append(HttpUtils.nullToEmpty(request.getHeaders().get(header))).append("\n");
+        }
+
+        @VisibleForTesting
+        void appendHttpHeaders(HttpRequest request, SortedSetMultimap<String, String> canonicalizedHeaders) {
+            Multimap<String, String> headers = request.getHeaders();
+            for (Entry<String, String> header : headers.entries()) {
+                if (header.getKey() == null)
+                    continue;
+                String key = header.getKey().toString().toLowerCase(Locale.getDefault());
+                // Ignore any headers that are not particularly interesting.
+                if (key.equalsIgnoreCase(HttpHeaders.CONTENT_TYPE) || key.equalsIgnoreCase("Content-MD5")
+                    || key.equalsIgnoreCase(HttpHeaders.DATE) || key.startsWith("x-" + headerTag + "-")) {
+                    canonicalizedHeaders.put(key, header.getValue());
+                }
+            }
+        }
+
+        @VisibleForTesting
+        void appendBucketName(HttpRequest req, StringBuilder toSign) {
+            String bucketName = S3Utils.getBucketName(req);
+
+            // If we have a payload/bucket/container that is not all lowercase, vhost-style URLs are not an option and must be
+            // automatically converted to their path-based equivalent.  This should only be possible for AWS-S3 since it is
+            // the only S3 implementation configured to allow uppercase payload/bucket/container names.
+            //
+            // http://code.google.com/p/jclouds/issues/detail?id=992
+            if (isVhostStyle && bucketName != null && bucketName.equals(bucketName.toLowerCase()))
+                toSign.append(servicePath).append(bucketName);
+        }
+
+        @VisibleForTesting
+        void appendUriPath(HttpRequest request, StringBuilder toSign) {
+
+            toSign.append(request.getEndpoint().getRawPath());
+
+            // ...however, there are a few exceptions that must be included in the
+            // signed URI.
+            if (request.getEndpoint().getQuery() != null) {
+                Multimap<String, String> params = queryParser().apply(request.getEndpoint().getQuery());
+                char separator = '?';
+                for (String paramName : Ordering.natural().sortedCopy(params.keySet())) {
+                    // Skip any parameters that aren't part of the canonical signed string
+                    if (!SIGNED_PARAMETERS.contains(paramName))
+                        continue;
+                    toSign.append(separator).append(paramName);
+                    String paramValue = get(params.get(paramName), 0);
+                    if (paramValue != null) {
+                        toSign.append("=").append(paramValue);
+                    }
+                    separator = '&';
+                }
+            }
+        }
+    }
 }

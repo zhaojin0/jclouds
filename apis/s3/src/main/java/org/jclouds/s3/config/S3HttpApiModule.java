@@ -17,6 +17,7 @@
 package org.jclouds.s3.config;
 
 import java.net.URI;
+import java.util.Date;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -25,6 +26,7 @@ import javax.inject.Singleton;
 
 import org.jclouds.Constants;
 import org.jclouds.aws.config.AWSHttpApiModule;
+import org.jclouds.aws.filters.FormSignerV4;
 import org.jclouds.aws.handlers.AWSClientErrorRetryHandler;
 import org.jclouds.aws.handlers.AWSServerErrorRetryHandler;
 import org.jclouds.blobstore.ContainerNotFoundException;
@@ -33,6 +35,7 @@ import org.jclouds.blobstore.domain.StorageMetadata;
 import org.jclouds.date.DateService;
 import org.jclouds.date.TimeStamp;
 import org.jclouds.http.HttpErrorHandler;
+import org.jclouds.http.HttpRequest;
 import org.jclouds.http.HttpRetryHandler;
 import org.jclouds.http.annotation.ClientError;
 import org.jclouds.http.annotation.Redirection;
@@ -46,6 +49,7 @@ import org.jclouds.s3.S3Client;
 import org.jclouds.s3.blobstore.functions.BucketsToStorageMetadata;
 import org.jclouds.s3.domain.BucketMetadata;
 import org.jclouds.s3.filters.RequestAuthorizeSignature;
+import org.jclouds.s3.filters.RequestAuthorizeSignatureV4;
 import org.jclouds.s3.functions.GetRegionForBucket;
 import org.jclouds.s3.handlers.ParseS3ErrorFromXmlContent;
 import org.jclouds.s3.handlers.S3RedirectionRetryHandler;
@@ -68,144 +72,182 @@ import com.google.inject.TypeLiteral;
 @ConfiguresHttpApi
 public class S3HttpApiModule<S extends S3Client> extends AWSHttpApiModule<S> {
 
-   @SuppressWarnings("unchecked")
-   public S3HttpApiModule() {
-      this(Class.class.cast(S3Client.class));
-   }
+    @SuppressWarnings("unchecked")
+    public S3HttpApiModule() {
+        this(Class.class.cast(S3Client.class));
+    }
 
-   protected S3HttpApiModule(Class<S> syncClientType) {
-      super(syncClientType);
-   }
+    protected S3HttpApiModule(Class<S> syncClientType) {
+        super(syncClientType);
+    }
 
-   @Provides
-   @Bucket
-   @Singleton
-   protected CacheLoader<String, Optional<String>> bucketToRegion(@Region Supplier<Set<String>> regionSupplier,
-            final S3Client client) {
-      Set<String> regions = regionSupplier.get();
-      if (regions.size() == 0) {
-         return new CacheLoader<String, Optional<String>>() {
+    @Provides
+    @Bucket
+    @Singleton
+    protected CacheLoader<String, Optional<String>> bucketToRegion(@Region Supplier<Set<String>> regionSupplier,
+                                                                   final S3Client client) {
+        Set<String> regions = regionSupplier.get();
+        if (regions.size() == 0) {
+            return new CacheLoader<String, Optional<String>>() {
 
+                @Override
+                public Optional<String> load(String bucket) {
+                    return Optional.absent();
+                }
+
+                @Override
+                public String toString() {
+                    return "noRegions()";
+                }
+            };
+        } else if (regions.size() == 1) {
+            final String onlyRegion = Iterables.getOnlyElement(regions);
+            return new CacheLoader<String, Optional<String>>() {
+                Optional<String> onlyRegionOption = Optional.of(onlyRegion);
+
+                @Override
+                public Optional<String> load(String bucket) {
+                    return onlyRegionOption;
+                }
+
+                @Override
+                public String toString() {
+                    return "onlyRegion(" + onlyRegion + ")";
+                }
+            };
+        } else {
+            return new CacheLoader<String, Optional<String>>() {
+                @Override
+                public Optional<String> load(String bucket) {
+                    try {
+                        return Optional.fromNullable(client.getBucketLocation(bucket));
+                    } catch (ContainerNotFoundException e) {
+                        return null;
+                    }
+                }
+
+                @Override
+                public String toString() {
+                    return "bucketToRegion()";
+                }
+            };
+        }
+    }
+
+    @Provides
+    @Bucket
+    @Singleton
+    protected LoadingCache<String, Optional<String>> bucketToRegion(@Bucket CacheLoader<String, Optional<String>> loader) {
+        return CacheBuilder.newBuilder().build(loader);
+    }
+
+    @Provides
+    @Bucket
+    @Singleton
+    protected Supplier<String> defaultRegionForBucket(@Region Supplier<String> defaultRegion) {
+        return defaultRegion;
+    }
+
+    @Provides
+    @Singleton
+    @Bucket
+    protected Supplier<URI> provideBucketURI(@Bucket Supplier<String> defaultRegion,
+                                             RegionToEndpointOrProviderIfNull regionToEndpoint) {
+        return Suppliers.compose(regionToEndpoint, defaultRegion);
+    }
+
+    @Override
+    protected void configure() {
+        super.configure();
+        install(new S3ObjectModule());
+        install(new S3ParserModule());
+        bindRequestSigner();
+        bind(new TypeLiteral<Function<String, Optional<String>>>() {
+        }).annotatedWith(Bucket.class).to(GetRegionForBucket.class);
+        bind(new TypeLiteral<Function<Set<BucketMetadata>, PageSet<? extends StorageMetadata>>>() {
+        }).to(BucketsToStorageMetadata.class);
+    }
+
+    @Override
+    protected void bindErrorHandlers() {
+        bind(HttpErrorHandler.class).annotatedWith(Redirection.class).to(ParseS3ErrorFromXmlContent.class);
+        bind(HttpErrorHandler.class).annotatedWith(ClientError.class).to(ParseS3ErrorFromXmlContent.class);
+        bind(HttpErrorHandler.class).annotatedWith(ServerError.class).to(ParseS3ErrorFromXmlContent.class);
+    }
+
+    protected void bindRequestSigner() {
+        bind(RequestAuthorizeSignature.class).to(RequestAuthorizeSignature.RequestAuthorizeSignatureV2.class).in(Scopes.SINGLETON);
+    }
+
+    @Provides
+    @Singleton
+    protected RequestSigner provideRequestSigner(RequestAuthorizeSignature in) {
+        if (in instanceof RequestSigner) {
+            return (RequestSigner) in;
+        }
+        return new RequestSigner() {
             @Override
-            public Optional<String> load(String bucket) {
-               return Optional.absent();
+            public String createStringToSign(HttpRequest input) {
+                return null;
             }
 
             @Override
-            public String toString() {
-               return "noRegions()";
+            public String sign(String toSign) {
+                return null;
             }
-         };
-      } else if (regions.size() == 1) {
-         final String onlyRegion = Iterables.getOnlyElement(regions);
-         return new CacheLoader<String, Optional<String>>() {
-            Optional<String> onlyRegionOption = Optional.of(onlyRegion);
+        };
+    }
 
-            @Override
-            public Optional<String> load(String bucket) {
-               return onlyRegionOption;
+    @Override
+    protected void bindRetryHandlers() {
+        bind(HttpRetryHandler.class).annotatedWith(Redirection.class).to(S3RedirectionRetryHandler.class);
+        bind(HttpRetryHandler.class).annotatedWith(ClientError.class).to(AWSClientErrorRetryHandler.class);
+        bind(HttpRetryHandler.class).annotatedWith(ServerError.class).to(AWSServerErrorRetryHandler.class);
+    }
+
+    @Provides
+    @TimeStamp
+    protected String provideTimeStamp(@TimeStamp Supplier<String> cache) {
+        return cache.get();
+    }
+
+
+    /**
+     * borrowing concurrency code to ensure that caching takes place properly
+     */
+    @Provides
+    @TimeStamp
+    @Singleton
+    protected Supplier<String> provideTimeStampCache(@Named(Constants.PROPERTY_SESSION_INTERVAL) long seconds,
+                                                     final DateService dateService) {
+        return Suppliers.memoizeWithExpiration(new Supplier<String>() {
+            public String get() {
+                return dateService.rfc822DateFormat();
             }
+        }, seconds, TimeUnit.SECONDS);
+    }
 
-            @Override
-            public String toString() {
-               return "onlyRegion(" + onlyRegion + ")";
+
+    @Provides
+    @TimeStamp
+    protected Date provideTimeStampDate(@TimeStamp Supplier<Date> cache) {
+        return cache.get();
+    }
+
+    /**
+     * borrowing concurrency code to ensure that caching takes place properly
+     */
+    @Provides
+    @TimeStamp
+    @Singleton
+    protected Supplier<Date> provideTimeStampCacheDate(
+        @Named(Constants.PROPERTY_SESSION_INTERVAL) long seconds,
+        @TimeStamp final Supplier<String> timestamp,
+        final DateService dateService) {
+        return Suppliers.memoizeWithExpiration(new Supplier<Date>() {
+            public Date get() {
+                return dateService.rfc822DateParse(timestamp.get());
             }
-         };
-      } else {
-         return new CacheLoader<String, Optional<String>>() {
-            @Override
-            public Optional<String> load(String bucket) {
-               try {
-                  return Optional.fromNullable(client.getBucketLocation(bucket));
-               } catch (ContainerNotFoundException e) {
-                  return null;
-               }
-            }
-
-            @Override
-            public String toString() {
-               return "bucketToRegion()";
-            }
-         };
-      }
-   }
-
-   @Provides
-   @Bucket
-   @Singleton
-   protected LoadingCache<String, Optional<String>> bucketToRegion(@Bucket CacheLoader<String, Optional<String>> loader) {
-      return CacheBuilder.newBuilder().build(loader);
-   }
-
-   @Provides
-   @Bucket
-   @Singleton
-   protected Supplier<String> defaultRegionForBucket(@Region Supplier<String> defaultRegion) {
-      return defaultRegion;
-   }
-
-   @Provides
-   @Singleton
-   @Bucket
-   protected Supplier<URI> provideBucketURI(@Bucket Supplier<String> defaultRegion,
-            RegionToEndpointOrProviderIfNull regionToEndpoint) {
-      return Suppliers.compose(regionToEndpoint, defaultRegion);
-   }
-
-   @Override
-   protected void configure() {
-      super.configure();
-      install(new S3ObjectModule());
-      install(new S3ParserModule());
-      bindRequestSigner();
-      bind(new TypeLiteral<Function<String, Optional<String>>>() {
-      }).annotatedWith(Bucket.class).to(GetRegionForBucket.class);
-      bind(new TypeLiteral<Function<Set<BucketMetadata>, PageSet<? extends StorageMetadata>>>() {
-      }).to(BucketsToStorageMetadata.class);
-   }
-
-   @Override
-   protected void bindErrorHandlers() {
-      bind(HttpErrorHandler.class).annotatedWith(Redirection.class).to(ParseS3ErrorFromXmlContent.class);
-      bind(HttpErrorHandler.class).annotatedWith(ClientError.class).to(ParseS3ErrorFromXmlContent.class);
-      bind(HttpErrorHandler.class).annotatedWith(ServerError.class).to(ParseS3ErrorFromXmlContent.class);
-   }
-
-   protected void bindRequestSigner() {
-      bind(RequestAuthorizeSignature.class).in(Scopes.SINGLETON);
-   }
-
-   @Provides
-   @Singleton
-   protected RequestSigner provideRequestSigner(RequestAuthorizeSignature in) {
-      return in;
-   }
-
-   @Override
-   protected void bindRetryHandlers() {
-      bind(HttpRetryHandler.class).annotatedWith(Redirection.class).to(S3RedirectionRetryHandler.class);
-      bind(HttpRetryHandler.class).annotatedWith(ClientError.class).to(AWSClientErrorRetryHandler.class);
-      bind(HttpRetryHandler.class).annotatedWith(ServerError.class).to(AWSServerErrorRetryHandler.class);
-   }
-
-   @Provides
-   @TimeStamp
-   protected String provideTimeStamp(@TimeStamp Supplier<String> cache) {
-      return cache.get();
-   }
-
-   /**
-    * borrowing concurrency code to ensure that caching takes place properly
-    */
-   @Provides
-   @TimeStamp
-   @Singleton
-   protected Supplier<String> provideTimeStampCache(@Named(Constants.PROPERTY_SESSION_INTERVAL) long seconds,
-            final DateService dateService) {
-      return Suppliers.memoizeWithExpiration(new Supplier<String>() {
-         public String get() {
-            return dateService.rfc822DateFormat();
-         }
-      }, seconds, TimeUnit.SECONDS);
-   }
+        }, seconds, TimeUnit.SECONDS);
+    }
 }
