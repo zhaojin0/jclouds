@@ -22,7 +22,7 @@ import org.testng.annotations.Test;
 import java.net.URI;
 
 /**
- * Created by ZhaoJin on 15-2-3.
+ * Tests parser region and service
  */
 public class AwsHostNameUtilsTest {
     @Test

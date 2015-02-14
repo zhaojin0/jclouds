@@ -20,9 +20,12 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
+import com.google.common.hash.Hasher;
+import com.google.common.hash.Hashing;
 import com.google.common.io.ByteProcessor;
 import com.google.common.net.HttpHeaders;
 import com.google.common.net.MediaType;
+import com.google.common.net.UrlEscapers;
 import com.google.inject.ImplementedBy;
 import org.jclouds.aws.domain.SessionCredentials;
 import org.jclouds.crypto.Crypto;
@@ -41,12 +44,8 @@ import javax.xml.ws.http.HTTPException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.security.DigestInputStream;
 import java.security.InvalidKeyException;
-import java.security.MessageDigest;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -66,7 +65,6 @@ import static org.jclouds.s3.reference.S3Constants.PROPERTY_S3_VIRTUAL_HOST_BUCK
 import static org.jclouds.util.Strings2.toInputStream;
 
 public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
-    private static final String DEFAULT_ENCODING = "UTF-8";
 
     /**
      * Regex which matches any of the sequences that we need to fix up after
@@ -123,6 +121,7 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
     private final SignatureWire signatureWire;
     private final String headerTag;
+    // s3 api does not version query string parameters
     //    private final String apiVersion;
     private final Supplier<Credentials> creds;
     private final ServiceAndRegion serviceAndRegion;
@@ -134,7 +133,6 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
         SignatureWire signatureWire,
         @Named(PROPERTY_S3_VIRTUAL_HOST_BUCKETS) boolean isVhostStyle,
         @Named(PROPERTY_HEADER_TAG) String headerTag,
-//        @ApiVersion String apiVersion,
         @Provider Supplier<Credentials> creds,
         @TimeStamp javax.inject.Provider<Date> timestampProvider,
         ServiceAndRegion serviceAndRegion,
@@ -143,7 +141,6 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
         this.signatureWire = signatureWire;
         this.headerTag = headerTag;
-//        this.apiVersion = apiVersion;
         this.creds = creds;
         this.timestampProvider = timestampProvider;
         this.serviceAndRegion = serviceAndRegion;
@@ -304,13 +301,13 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
     protected byte[] hash(InputStream input) throws HTTPException {
         try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            @SuppressWarnings("resource")
-            DigestInputStream digestInputStream = new DigestInputStream(
-                input, md);
-            byte[] buffer = new byte[1024];
-            while (digestInputStream.read(buffer) > -1) {}
-            return digestInputStream.getMessageDigest().digest();
+            Hasher hasher = Hashing.sha256().newHasher();
+            byte[] buffer = new byte[4096];
+            int r;
+            while ((r = input.read(buffer)) != -1) {
+                hasher.putBytes(buffer, 0, r);
+            }
+            return hasher.hash().asBytes();
         } catch (Exception e) {
             throw new HttpException(
                 "Unable to compute hash while signing request: "
@@ -389,19 +386,7 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
             sorted.put(urlEncode(key), urlEncode(value));
         }
 
-        StringBuilder builder = new StringBuilder();
-        pairs = sorted.entrySet().iterator();
-        while (pairs.hasNext()) {
-            Map.Entry<String, String> pair = pairs.next();
-            builder.append(pair.getKey());
-            builder.append("=");
-            builder.append(pair.getValue());
-            if (pairs.hasNext()) {
-                builder.append("&");
-            }
-        }
-
-        return builder.toString();
+        return Joiner.on("&").withKeyValueSeparator("=").join(sorted);
     }
 
     private static final TimeZone GMT = TimeZone.getTimeZone("GMT");
@@ -431,31 +416,26 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
             return "";
         }
 
-        try {
-            String encoded = URLEncoder.encode(value, DEFAULT_ENCODING);
+        String encoded = UrlEscapers.urlFormParameterEscaper().escape(value);
 
-            Matcher matcher = ENCODED_CHARACTERS_PATTERN.matcher(encoded);
-            StringBuffer buffer = new StringBuffer(encoded.length());
+        Matcher matcher = ENCODED_CHARACTERS_PATTERN.matcher(encoded);
+        StringBuffer buffer = new StringBuffer(encoded.length());
 
-            while (matcher.find()) {
-                String replacement = matcher.group(0);
+        while (matcher.find()) {
+            String replacement = matcher.group(0);
 
-                if ("+".equals(replacement)) {
-                    replacement = "%20";
-                } else if ("*".equals(replacement)) {
-                    replacement = "%2A";
-                } else if ("%7E".equals(replacement)) {
-                    replacement = "~";
-                }
-
-                matcher.appendReplacement(buffer, replacement);
+            if ("+".equals(replacement)) {
+                replacement = "%20";
+            } else if ("*".equals(replacement)) {
+                replacement = "%2A";
+            } else if ("%7E".equals(replacement)) {
+                replacement = "~";
             }
 
-            matcher.appendTail(buffer);
-            return buffer.toString();
-
-        } catch (UnsupportedEncodingException ex) {
-            throw new RuntimeException(ex);
+            matcher.appendReplacement(buffer, replacement);
         }
+
+        matcher.appendTail(buffer);
+        return buffer.toString();
     }
 }
