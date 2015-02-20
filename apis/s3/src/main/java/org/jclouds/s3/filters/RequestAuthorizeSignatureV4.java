@@ -19,6 +19,7 @@ package org.jclouds.s3.filters;
 import com.google.common.base.Joiner;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Multimap;
 import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
@@ -33,6 +34,7 @@ import org.jclouds.date.TimeStamp;
 import org.jclouds.domain.Credentials;
 import org.jclouds.http.HttpException;
 import org.jclouds.http.HttpRequest;
+import org.jclouds.http.Uris;
 import org.jclouds.http.internal.SignatureWire;
 import org.jclouds.io.Payload;
 import org.jclouds.location.Provider;
@@ -61,6 +63,7 @@ import static com.google.common.net.HttpHeaders.*;
 import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
 import static org.jclouds.crypto.Macs.asByteProcessor;
 import static org.jclouds.http.utils.Queries.queryParser;
+import static org.jclouds.s3.filters.AwsSignatureV4Constants.*;
 import static org.jclouds.s3.reference.S3Constants.PROPERTY_S3_VIRTUAL_HOST_BUCKETS;
 import static org.jclouds.util.Strings2.toInputStream;
 
@@ -438,4 +441,136 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
         matcher.appendTail(buffer);
         return buffer.toString();
     }
+
+    // Authenticating Requests by Using Query Parameters (AWS Signature Version 4)
+
+
+    // Using query parameters to authenticate requests is useful when you want to express a request entirely in a URL.
+    // This method is also referred as presigning a URL.
+    // Presigned URLs enable you to grant temporary access to your Amazon S3 resources.
+    // The end user can then enter the presigned URL in his or her browser to access the specific Amazon S3 resource.
+    // You can also use presigned URLs to embed clickable links in HTML.
+    // For example, you might store videos in an Amazon S3 bucket and make them available on your website by using presigned URLs.
+    // Identifies the version of AWS Signature and the algorithm that you used to calculate the signature.
+
+    public HttpRequest signForTemporaryAccess(HttpRequest request, long timeInSeconds) {
+        checkArgument(request.getHeaders().containsKey(HOST), "request is not ready to sign; host not present");
+
+        String method = request.getMethod();
+        String host = request.getFirstHeaderOrNull(HOST);
+
+        Date date = timestampProvider.get();
+        String timestamp = timestampFormat.format(date);
+        String datestamp = dateFormat.format(date);
+
+        String service = serviceAndRegion.service();
+        String region = serviceAndRegion.region(host);
+        String credentialScope = Joiner.on('/').join(datestamp, region, service, "aws4_request");
+
+        Uris.UriBuilder endpointBuilder = Uris.uriBuilder(request.getEndpoint());
+
+        // different with signature with Authorization header
+        HttpRequest.Builder<?> requestBuilder = request.toBuilder() //
+            // sign for temporary access use query string parameter:
+            // X-Amz-Algorithm, X-Amz-Credential, X-Amz-Date, X-Amz-Expires, X-Amz-SignedHeaders, X-Amz-Signature
+            // remove Authorization, x-amz-content-sha256, X-Amz-Date headers
+            .removeHeader(AUTHORIZATION_HEADER)
+            .removeHeader(AMZ_CONTENT_SHA256_HEADER)
+            .removeHeader(AMZ_DATE_HEADER);
+
+        // Canonical Headers
+        // must include the HTTP host header.
+        // If you plan to include any of the x-amz-* headers, these headers must also be added for signature calculation.
+        // You can optionally add all other headers that you plan to include in your request.
+        // For added security, you should sign as many headers as possible.
+        ImmutableMap.Builder<String, String> signedHeadersBuilder = ImmutableSortedMap.<String, String>naturalOrder() //
+            .put("host", host);
+
+        ImmutableMap<String, String> signedHeaders = signedHeadersBuilder.build();
+
+        Credentials credentials = creds.get();
+
+        if (credentials instanceof SessionCredentials) {
+            String token = SessionCredentials.class.cast(credentials).getSessionToken();
+            // different with signature with Authorization header
+            endpointBuilder.replaceQuery("X-Amz-Security-Token", token);
+        }
+
+        // set payload with origin request payload
+        requestBuilder.payload(request.getPayload());
+
+        // X-Amz-Algorithm=HMAC-SHA256
+        endpointBuilder.replaceQuery(AMZ_ALGORITHM_PARAM, AwsSignatureV4Constants.AMZ_ALGORITHM_HMAC_SHA256);
+
+        // X-Amz-Credential=<your-access-key-id>/<date>/<AWS-region>/<AWS-service>/aws4_request.
+        String credential = Joiner.on("/").join(credentials.identity, credentialScope);
+        endpointBuilder.replaceQuery(AMZ_CREDENTIAL_PARAM, credential);
+
+        // X-Amz-Date=ISO 8601 format, for example, 20130721T201207Z
+        endpointBuilder.replaceQuery(AMZ_DATE_PARAM, timestamp);
+
+        // X-Amz-Expires=time in seconds
+        endpointBuilder.replaceQuery(AMZ_EXPIRES_PARAM, String.valueOf(timeInSeconds));
+
+        // X-Amz-SignedHeaders=HTTP host header is required.
+        endpointBuilder.replaceQuery(AMZ_SIGNEDHEADERS_PARAM, Joiner.on(';').join(signedHeaders.keySet()));
+
+        URI endpoint = endpointBuilder.build();
+        String stringToSign = createStringToSignForSignatureQueryParam(method, endpoint, timestamp, signedHeaders, credentialScope);
+
+        signatureWire.getWireLog().debug("<< " + stringToSign);
+
+        requestBuilder.endpoint(endpoint);
+
+        byte[] signatureKey = signatureKey(credentials.credential, datestamp, region, service);
+        String signature = base16().lowerCase().encode(hmacSHA256(stringToSign, signatureKey));
+
+        // X-Amz-Signature=Signature
+        requestBuilder.replaceQueryParam(AMZ_SIGNATURE_PARAM, signature);
+
+        return requestBuilder.build();
+    }
+
+    String createStringToSignForSignatureQueryParam(String method, URI endpoint, String timestamp, Map<String, String> signedHeaders, String credentialScope) {
+        StringBuilder canonicalRequest = new StringBuilder();
+
+        // HTTPRequestMethod + '\n' +
+        canonicalRequest.append(method).append("\n");
+
+        // CanonicalURI + '\n' +
+        canonicalRequest.append(endpoint.getPath()).append("\n");
+
+        // CanonicalQueryString + '\n' +
+        if (endpoint.getQuery() != null) {
+            canonicalRequest.append(getCanonicalizedQueryString(endpoint.getQuery()));
+        }
+        canonicalRequest.append("\n");
+
+        // CanonicalHeaders + '\n' +
+        for (Map.Entry<String, String> entry : signedHeaders.entrySet()) {
+            canonicalRequest.append(entry.getKey()).append(':').append(entry.getValue()).append('\n');
+        }
+        canonicalRequest.append("\n");
+
+        // SignedHeaders + '\n' +
+        canonicalRequest.append(Joiner.on(';').join(signedHeaders.keySet())).append('\n');
+
+        // UNSIGNED_PAYLOAD
+        canonicalRequest.append(UNSIGNED_PAYLOAD);
+
+        signatureWire.getWireLog().debug("<<", canonicalRequest);
+
+        StringBuilder toSign = new StringBuilder();
+        // Algorithm + '\n' +
+        toSign.append("AWS4-HMAC-SHA256").append('\n');
+        // RequestDate + '\n' +
+        toSign.append(timestamp).append('\n');
+        // CredentialScope + '\n' +
+        toSign.append(credentialScope).append('\n');
+        // HexEncode(Hash(CanonicalRequest))
+        toSign.append(base16().lowerCase().encode(hash(canonicalRequest.toString())));
+
+        return toSign.toString();
+    }
+
 }
