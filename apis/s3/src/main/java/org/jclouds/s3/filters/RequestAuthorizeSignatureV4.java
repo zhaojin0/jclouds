@@ -74,6 +74,9 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
      * URLEncoder.encode().
      */
     private static final Pattern ENCODED_CHARACTERS_PATTERN;
+    private static final TimeZone GMT = TimeZone.getTimeZone("GMT");
+    private static final DateFormat timestampFormat;
+    private static final DateFormat dateFormat;
 
     static {
         StringBuilder pattern = new StringBuilder();
@@ -88,6 +91,13 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
             .append(Pattern.quote("%2F"));
 
         ENCODED_CHARACTERS_PATTERN = Pattern.compile(pattern.toString());
+
+        timestampFormat = new SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'");
+        timestampFormat.setTimeZone(GMT);
+
+        dateFormat = new SimpleDateFormat("yyyyMMdd");
+        dateFormat.setTimeZone(GMT);
+
     }
 
     // Specifying a default for how to parse the service and region in this way allows
@@ -391,18 +401,6 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
         return Joiner.on("&").withKeyValueSeparator("=").join(sorted);
     }
-
-    private static final TimeZone GMT = TimeZone.getTimeZone("GMT");
-    private static final DateFormat timestampFormat;
-    private static final DateFormat dateFormat;
-
-    static {
-        timestampFormat = new SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'");
-        dateFormat = new SimpleDateFormat("yyyyMMdd");
-        timestampFormat.setTimeZone(GMT);
-        dateFormat.setTimeZone(GMT);
-    }
-
 
     /**
      * Encode a string for use in the path of a URL; uses URLEncoder.encode,
