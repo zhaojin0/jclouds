@@ -16,43 +16,41 @@
  */
 package org.jclouds.aws.s3.filters;
 
-import com.google.common.base.Supplier;
-import org.jclouds.crypto.Crypto;
-import org.jclouds.date.TimeStamp;
-import org.jclouds.domain.Credentials;
-import org.jclouds.http.internal.SignatureWire;
-import org.jclouds.s3.filters.S3RequestAuthorizeSignatureV4;
+import org.jclouds.http.HttpRequest;
+import org.jclouds.s3.filters.Aws4SignerForAuthorizationHeader;
+import org.jclouds.s3.filters.Aws4SignerForQueryString;
+import org.jclouds.s3.filters.RequestAuthorizeSignatureV4;
 
 import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
 import javax.inject.Singleton;
-import java.util.Date;
 
-import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
-import static org.jclouds.s3.reference.S3Constants.PROPERTY_S3_VIRTUAL_HOST_BUCKETS;
+import static org.jclouds.http.utils.Queries.queryParser;
+import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_SIGNATURE_PARAM;
 
 /**
  * Signs the AWS S3 request, supporting temporary signatures.
  */
 @Singleton
-public class AWSRequestAuthorizeSignatureV4 extends S3RequestAuthorizeSignatureV4 {
+public class AWSRequestAuthorizeSignatureV4 extends RequestAuthorizeSignatureV4 {
 
     @Inject
-    public AWSRequestAuthorizeSignatureV4(
-        SignatureWire signatureWire,
-        @Named(PROPERTY_S3_VIRTUAL_HOST_BUCKETS) boolean isVhostStyle,
-        @Named(PROPERTY_HEADER_TAG) String headerTag,
-        @org.jclouds.location.Provider Supplier<Credentials> creds,
-        @TimeStamp Provider<Date> timestampProvider,
-        ServiceAndRegion serviceAndRegion,
-        Crypto crypto
-    ) {
-        super(signatureWire,
-            isVhostStyle,
-            headerTag,
-            creds,
-            timestampProvider,
-            serviceAndRegion, crypto);
+    public AWSRequestAuthorizeSignatureV4(Aws4SignerForAuthorizationHeader signerForAuthorizationHeader,
+            Aws4SignerForQueryString signerForQueryString) {
+        super(signerForAuthorizationHeader, signerForQueryString);
+    }
+
+    @Override
+    protected HttpRequest signForAuthorizationHeader(HttpRequest request) {
+       /*
+        * Only add the Authorization header if the query string doesn't already contain
+        * the 'X-Amz-Signature' parameter, otherwise S3 will fail the request complaining about
+        * duplicate authentication methods. The 'Signature' parameter will be added for signed URLs
+        * with expiration.
+        */
+
+        if (queryParser().apply(request.getEndpoint().getQuery()).containsKey(AMZ_SIGNATURE_PARAM)) {
+            return request;
+        }
+        return super.signForAuthorizationHeader(request);
     }
 }

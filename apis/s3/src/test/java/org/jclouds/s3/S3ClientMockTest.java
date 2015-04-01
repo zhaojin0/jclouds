@@ -16,27 +16,30 @@
  */
 package org.jclouds.s3;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.inject.Module;
-import com.squareup.okhttp.mockwebserver.MockResponse;
-import com.squareup.okhttp.mockwebserver.MockWebServer;
-import com.squareup.okhttp.mockwebserver.RecordedRequest;
-import org.jclouds.ContextBuilder;
-import org.jclouds.concurrent.config.ExecutorServiceModule;
-import org.jclouds.http.okhttp.config.OkHttpCommandExecutorServiceModule;
-import org.jclouds.s3.domain.S3Object;
-import org.testng.annotations.Test;
+import static com.google.common.net.HttpHeaders.CONTENT_LENGTH;
+import static com.google.common.net.HttpHeaders.ETAG;
+import static com.google.common.net.HttpHeaders.EXPECT;
+import static com.google.common.util.concurrent.MoreExecutors.sameThreadExecutor;
+import static org.jclouds.Constants.PROPERTY_MAX_RETRIES;
+import static org.testng.Assert.assertEquals;
 
 import java.io.IOException;
 import java.net.URL;
 import java.util.Properties;
 import java.util.Set;
 
-import static com.google.common.net.HttpHeaders.*;
-import static com.google.common.util.concurrent.MoreExecutors.sameThreadExecutor;
-import static org.jclouds.Constants.PROPERTY_MAX_RETRIES;
-import static org.testng.Assert.assertEquals;
+import org.jclouds.ContextBuilder;
+import org.jclouds.concurrent.config.ExecutorServiceModule;
+import org.jclouds.http.okhttp.config.OkHttpCommandExecutorServiceModule;
+import org.jclouds.s3.domain.S3Object;
+import org.testng.annotations.Test;
+
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.inject.Module;
+import com.squareup.okhttp.mockwebserver.MockResponse;
+import com.squareup.okhttp.mockwebserver.MockWebServer;
+import com.squareup.okhttp.mockwebserver.RecordedRequest;
 
 @Test(singleThreaded = true)
 public class S3ClientMockTest {

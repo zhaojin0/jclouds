@@ -1,25 +1,28 @@
 /*
-* Licensed to the Apache Software Foundation (ASF) under one or more
-* contributor license agreements.  See the NOTICE file distributed with
-* this work for additional information regarding copyright ownership.
-* The ASF licenses this file to You under the Apache License, Version 2.0
-* (the "License"); you may not use this file except in compliance with
-* the License.  You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*/
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.jclouds.aws.s3.blobstore;
 
 import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.net.HttpHeaders;
 import com.google.inject.Module;
 import com.google.inject.Scopes;
+import org.jclouds.Constants;
 import org.jclouds.aws.s3.AWSS3ApiMetadata;
 import org.jclouds.aws.s3.AWSS3ProviderMetadata;
 import org.jclouds.aws.s3.blobstore.config.AWSS3BlobStoreContextModule;
@@ -28,8 +31,8 @@ import org.jclouds.aws.s3.filters.AWSRequestAuthorizeSignatureV4;
 import org.jclouds.blobstore.BlobRequestSigner;
 import org.jclouds.blobstore.BlobStore;
 import org.jclouds.blobstore.domain.Blob;
+import org.jclouds.date.DateService;
 import org.jclouds.date.TimeStamp;
-import org.jclouds.date.internal.SimpleDateFormatDateService;
 import org.jclouds.http.HttpRequest;
 import org.jclouds.providers.ProviderMetadata;
 import org.jclouds.rest.ConfiguresHttpApi;
@@ -38,17 +41,23 @@ import org.jclouds.s3.filters.RequestAuthorizeSignature;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
 
+import javax.inject.Named;
 import java.util.Date;
 import java.util.Properties;
 
-import static org.jclouds.Constants.*;
+import static org.jclouds.Constants.PROPERTY_CREDENTIAL;
+import static org.jclouds.Constants.PROPERTY_IDENTITY;
 import static org.testng.Assert.assertEquals;
 
 @Test(groups = "unit", testName = "AWSS3BlobSignerV4ExpectTest")
 public class AWSS3BlobSignerV4ExpectTest extends S3BlobSignerExpectTest {
-    private static final String IDENTITY ="AKIAIOSFODNN7EXAMPLE";
-    private static final String CREDENTIAL= "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
-    private static final String DATE = "Fri, 20 Feb 2015 08:42:44 GMT";
+    private static final String IDENTITY = "AKIAPAEBI3QI4EXAMPLE";
+    private static final String CREDENTIAL = "oHkkcPcOjJnoAXpjT8GXdNeBjo6Ru7QeFExAmPlE";
+    private static final String TIMESTAMP = "Thu, 03 Feb 2015 07:11:11 GMT";
+
+    private static final String BUCKET_NAME = "test-bucket";
+    private static final String OBJECT_NAME = "ExampleObject.txt";
+    private static final String HOST = BUCKET_NAME + ".s3.amazonaws.com";
 
     public AWSS3BlobSignerV4ExpectTest() {
         provider = null;
@@ -57,16 +66,15 @@ public class AWSS3BlobSignerV4ExpectTest extends S3BlobSignerExpectTest {
     @Override
     protected HttpRequest getBlobWithTime() {
         return HttpRequest.builder().method("GET")
-            .endpoint("https://examplebucket.s3.amazonaws.com/test.txt" +
-                "?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
-                "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20150220/us-east-1/s3/aws4_request" +
-                "&X-Amz-Date=20150220T084244Z" +
-                "&X-Amz-Expires=86400" +
-                "&X-Amz-SignedHeaders=host" +
-                "&X-Amz-Signature=d5f572953fdba30c3ab217a36be0ec6061afd0be020ff3aa1f5da8cae8c584d3")
-            .addHeader("Host", "examplebucket.s3.amazonaws.com")
-            .addHeader("Content-Type", "application/x-www-form-urlencoded")
-            .build();
+                .endpoint("https://" + HOST + "/" + OBJECT_NAME
+                        + "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                        + "&X-Amz-Credential=AKIAPAEBI3QI4EXAMPLE/20150203/us-east-1/s3/aws4_request"
+                        + "&X-Amz-Date=20150203T071111Z"
+                        + "&X-Amz-Expires=86400"
+                        + "&X-Amz-SignedHeaders=host"
+                        + "&X-Amz-Signature=0bafb6a0d99c8b7c39abe5496e9897e8c442b09278f1a647267acb25e8d1c550")
+                .addHeader(HttpHeaders.HOST, HOST)
+                .build();
     }
 
     @Test
@@ -74,43 +82,40 @@ public class AWSS3BlobSignerV4ExpectTest extends S3BlobSignerExpectTest {
     public void testSignGetBlobWithTime() {
         BlobStore getBlobWithTime = requestsSendResponses(init());
         HttpRequest compare = getBlobWithTime();
-        HttpRequest signedRequest = getBlobWithTime.getContext().getSigner().signGetBlob("examplebucket", "test.txt", 86400l /* seconds */);
+        HttpRequest signedRequest = getBlobWithTime.getContext().getSigner().signGetBlob(BUCKET_NAME, OBJECT_NAME,
+                86400l /* seconds */);
         assertEquals(signedRequest, compare);
     }
 
     protected HttpRequest _putBlobWithTime() {
         return HttpRequest.builder().method("PUT")
-            .endpoint("https://examplebucket.s3.amazonaws.com/test.txt" +
-                "?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
-                "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE/20150220/us-east-1/s3/aws4_request" +
-                "&X-Amz-Date=20150220T084244Z" +
-                "&X-Amz-Expires=86400" +
-                "&X-Amz-SignedHeaders=host" +
-                "&X-Amz-Signature=29e9db3b175db6c83e974fd812687e6f09db51a259bfcbab39654daf0021c802")
-            .addHeader("Expect", "100-continue")
-            .addHeader("Host", "examplebucket.s3.amazonaws.com")
-            .addHeader("Content-Type", "text/plain")
-            .build();
+                .endpoint("https://" + HOST + "/" + OBJECT_NAME
+                        + "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                        + "&X-Amz-Credential=AKIAPAEBI3QI4EXAMPLE/20150203/us-east-1/s3/aws4_request"
+                        + "&X-Amz-Date=20150203T071111Z"
+                        + "&X-Amz-Expires=86400"
+                        + "&X-Amz-SignedHeaders=host"
+                        + "&X-Amz-Signature=41484fb83e0c51b289907979ff96b2c743f6faf8dc70fca1c6fa78d8aeda132f")
+                .addHeader(HttpHeaders.EXPECT, "100-continue")
+                .addHeader(HttpHeaders.HOST, HOST)
+                .build();
     }
 
     @Test
     @Override
     public void testSignPutBlobWithTime() throws Exception {
         BlobStore signPutBloblWithTime = requestsSendResponses(init());
-        Blob blob = signPutBloblWithTime.blobBuilder("test.txt").payload(text).contentType("text/plain").build();
+        Blob blob = signPutBloblWithTime.blobBuilder(OBJECT_NAME).payload(text).contentType("text/plain").build();
         HttpRequest compare = _putBlobWithTime();
         compare.setPayload(blob.getPayload());
-        HttpRequest signedRequest = signPutBloblWithTime.getContext().getSigner().signPutBlob("examplebucket", blob, 86400l /* seconds */);
+        HttpRequest signedRequest = signPutBloblWithTime.getContext().getSigner().signPutBlob(BUCKET_NAME, blob,
+                86400l /* seconds */);
         assertEquals(signedRequest, compare);
     }
 
     @Override
     protected HttpRequest putBlob() {
-        return HttpRequest.builder().method("PUT")
-            .endpoint("https://examplebucket.s3.amazonaws.com/test.txt")
-            .addHeader("Expect", "100-continue")
-            .addHeader("Date", "Thu, 05 Jun 2008 16:38:19 GMT")
-            .addHeader("Authorization", "AWS identity:j9Dy/lmmvlCKjA4lkqZenLxMkR4=").build();
+        throw new SkipException("skip putBlob");
     }
 
     @Override
@@ -149,7 +154,8 @@ public class AWSS3BlobSignerV4ExpectTest extends S3BlobSignerExpectTest {
     @Override
     protected ProviderMetadata createProviderMetadata() {
         AWSS3ApiMetadata.Builder apiBuilder = new AWSS3ApiMetadata().toBuilder();
-        apiBuilder.defaultModules(ImmutableSet.<Class<? extends Module>>of(TestAWSS3SignerV4HttpApiModule.class, TestAWSS3BlobStoreContextModule.class));
+        apiBuilder.defaultModules(ImmutableSet.<Class<? extends Module>>of(TestAWSS3SignerV4HttpApiModule.class,
+                TestAWSS3BlobStoreContextModule.class));
         return new AWSS3ProviderMetadata().toBuilder().apiMetadata(apiBuilder.build()).build();
     }
 
@@ -178,13 +184,16 @@ public class AWSS3BlobSignerV4ExpectTest extends S3BlobSignerExpectTest {
         @Override
         @TimeStamp
         protected String provideTimeStamp(@TimeStamp Supplier<String> cache) {
-            return DATE;
+            return TIMESTAMP;
         }
 
         @Override
         @TimeStamp
-        protected Date provideTimeStampDate(@TimeStamp Supplier<Date> cache) {
-            return new SimpleDateFormatDateService().rfc822DateParse(DATE);
+        protected Supplier<Date> provideTimeStampCacheDate(
+                @Named(Constants.PROPERTY_SESSION_INTERVAL) long seconds,
+                @TimeStamp final Supplier<String> timestamp,
+                final DateService dateService) {
+            return Suppliers.ofInstance(dateService.rfc822DateParse(TIMESTAMP));
         }
     }
 }

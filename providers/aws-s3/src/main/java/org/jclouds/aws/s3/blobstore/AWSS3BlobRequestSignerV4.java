@@ -48,8 +48,8 @@ public class AWSS3BlobRequestSignerV4 extends S3BlobRequestSigner<AWSS3Client> {
         checkNotNull(container, "container");
         checkNotNull(name, "name");
         HttpRequest request = processor.apply(Invocation.create(getMethod, ImmutableList.<Object>of(container, name)));
-        request = cleanRequest(request);
-        return authSigner.signForTemporaryAccess(request, timeInSeconds);
+        request = authSigner.signForTemporaryAccess(request, timeInSeconds);
+        return cleanRequest(request);
     }
 
     @Override
@@ -58,7 +58,7 @@ public class AWSS3BlobRequestSignerV4 extends S3BlobRequestSigner<AWSS3Client> {
         checkNotNull(blob, "blob");
         HttpRequest request = processor.apply(Invocation.create(createMethod,
             ImmutableList.<Object>of(container, blobToObject.apply(blob))));
-        request = cleanRequest(request);
-        return authSigner.signForTemporaryAccess(request, timeInSeconds);
+        request = authSigner.signForTemporaryAccess(request, timeInSeconds);
+        return cleanRequest(request);
     }
 }
