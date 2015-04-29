@@ -37,7 +37,7 @@ import org.jclouds.http.internal.SignatureWire;
 
 import com.google.common.base.Supplier;
 
-import static org.jclouds.s3.filters.RequestAuthorizeSignature.RequestAuthorizeSignatureV2;
+import org.jclouds.s3.filters.RequestAuthorizeSignatureV2;
 
 /** Signs the AWS S3 request, supporting temporary signatures. */
 @Singleton

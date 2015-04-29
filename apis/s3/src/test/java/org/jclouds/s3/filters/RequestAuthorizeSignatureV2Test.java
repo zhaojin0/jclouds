@@ -87,7 +87,7 @@ public class RequestAuthorizeSignatureV2Test extends BaseS3ClientTest<S3Client> 
             method(S3Client.class, "getBucketLocation", String.class),
             ImmutableList.<Object>of("bucket"));
         StringBuilder builder = new StringBuilder();
-        ((RequestAuthorizeSignature.RequestAuthorizeSignatureV2) filter).appendBucketName(request, builder);
+        ((RequestAuthorizeSignatureV2) filter).appendBucketName(request, builder);
         assertEquals(builder.toString(), "");
     }
 
@@ -95,7 +95,7 @@ public class RequestAuthorizeSignatureV2Test extends BaseS3ClientTest<S3Client> 
     void testAclQueryString() throws SecurityException, NoSuchMethodException {
         HttpRequest request = putBucketAcl();
         StringBuilder builder = new StringBuilder();
-        ((RequestAuthorizeSignature.RequestAuthorizeSignatureV2) filter).appendUriPath(request, builder);
+        ((RequestAuthorizeSignatureV2) filter).appendUriPath(request, builder);
         assertEquals(builder.toString(), "/" + bucketName + "?acl");
     }
 
@@ -112,7 +112,7 @@ public class RequestAuthorizeSignatureV2Test extends BaseS3ClientTest<S3Client> 
     void testAppendBucketNameHostHeaderService() throws SecurityException, NoSuchMethodException {
         HttpRequest request = listOwnedBuckets();
         StringBuilder builder = new StringBuilder();
-        ((RequestAuthorizeSignature.RequestAuthorizeSignatureV2) filter).appendBucketName(request, builder);
+        ((RequestAuthorizeSignatureV2) filter).appendBucketName(request, builder);
         assertEquals(builder.toString(), "");
     }
 
@@ -125,9 +125,9 @@ public class RequestAuthorizeSignatureV2Test extends BaseS3ClientTest<S3Client> 
     void testHeadersGoLowercase() throws SecurityException, NoSuchMethodException {
         HttpRequest request = putObject();
         SortedSetMultimap<String, String> canonicalizedHeaders = TreeMultimap.create();
-        ((RequestAuthorizeSignature.RequestAuthorizeSignatureV2) filter).appendHttpHeaders(request, canonicalizedHeaders);
+        ((RequestAuthorizeSignatureV2) filter).appendHttpHeaders(request, canonicalizedHeaders);
         StringBuilder builder = new StringBuilder();
-        ((RequestAuthorizeSignature.RequestAuthorizeSignatureV2) filter).appendAmzHeaders(canonicalizedHeaders, builder);
+        ((RequestAuthorizeSignatureV2) filter).appendAmzHeaders(canonicalizedHeaders, builder);
         assertEquals(builder.toString(), S3Headers.USER_METADATA_PREFIX + "adrian:foo\n");
     }
 

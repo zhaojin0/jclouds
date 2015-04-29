@@ -16,14 +16,17 @@
  */
 package org.jclouds.s3.config;
 
-import java.net.URI;
-import java.util.Date;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-
-import javax.inject.Named;
-import javax.inject.Singleton;
-
+import com.google.common.base.Function;
+import com.google.common.base.Optional;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.collect.Iterables;
+import com.google.inject.Provides;
+import com.google.inject.Scopes;
+import com.google.inject.TypeLiteral;
 import org.jclouds.Constants;
 import org.jclouds.aws.config.AWSHttpApiModule;
 import org.jclouds.aws.handlers.AWSClientErrorRetryHandler;
@@ -48,21 +51,17 @@ import org.jclouds.s3.S3Client;
 import org.jclouds.s3.blobstore.functions.BucketsToStorageMetadata;
 import org.jclouds.s3.domain.BucketMetadata;
 import org.jclouds.s3.filters.RequestAuthorizeSignature;
+import org.jclouds.s3.filters.RequestAuthorizeSignatureV2;
 import org.jclouds.s3.functions.GetRegionForBucket;
 import org.jclouds.s3.handlers.ParseS3ErrorFromXmlContent;
 import org.jclouds.s3.handlers.S3RedirectionRetryHandler;
 
-import com.google.common.base.Function;
-import com.google.common.base.Optional;
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
-import com.google.common.collect.Iterables;
-import com.google.inject.Provides;
-import com.google.inject.Scopes;
-import com.google.inject.TypeLiteral;
+import javax.inject.Named;
+import javax.inject.Singleton;
+import java.net.URI;
+import java.util.Date;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Configures the S3 connection, including logging and http transport.
@@ -174,7 +173,7 @@ public class S3HttpApiModule<S extends S3Client> extends AWSHttpApiModule<S> {
    }
 
    protected void bindRequestSigner() {
-      bind(RequestAuthorizeSignature.class).to(RequestAuthorizeSignature.RequestAuthorizeSignatureV2.class).in(Scopes.SINGLETON);
+      bind(RequestAuthorizeSignature.class).to(RequestAuthorizeSignatureV2.class).in(Scopes.SINGLETON);
    }
 
    @Provides

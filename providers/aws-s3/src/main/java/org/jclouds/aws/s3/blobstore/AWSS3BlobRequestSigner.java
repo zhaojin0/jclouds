@@ -42,7 +42,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.net.HttpHeaders;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
-import static org.jclouds.s3.filters.RequestAuthorizeSignature.RequestAuthorizeSignatureV2;
+import org.jclouds.s3.filters.RequestAuthorizeSignatureV2;
 
 public class AWSS3BlobRequestSigner extends S3BlobRequestSigner<AWSS3Client> {
    public static final String TEMPORARY_SIGNATURE_PARAM = "Signature";
