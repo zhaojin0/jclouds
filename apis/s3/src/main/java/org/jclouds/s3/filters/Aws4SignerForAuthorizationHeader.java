@@ -40,11 +40,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Date;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.io.BaseEncoding.base16;
 import static com.google.common.net.HttpHeaders.AUTHORIZATION;
 import static com.google.common.net.HttpHeaders.DATE;
-import static com.google.common.net.HttpHeaders.HOST;
 import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_ALGORITHM_HMAC_SHA256;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_CONTENT_SHA256_HEADER;
@@ -66,9 +65,11 @@ public class Aws4SignerForAuthorizationHeader extends Aws4SignerBase {
     }
 
     protected HttpRequest sign(HttpRequest request) throws HttpException {
-        checkArgument(request.getHeaders().containsKey(HOST), "request is not ready to sign; host not present");
+        checkNotNull(request, "request is not ready to sign");
+        checkNotNull(request.getEndpoint(), "request is not ready to sign, request.endpoint not present.");
 
-        String host = request.getFirstHeaderOrNull(HOST);
+        // get host from request endpoint.
+        String host = request.getEndpoint().getHost();
 
         Date date = timestampProvider.get();
         String timestamp = timestampFormat.format(date);
@@ -100,6 +101,7 @@ public class Aws4SignerForAuthorizationHeader extends Aws4SignerBase {
         }
 
         // host
+        requestBuilder.replaceHeader(HttpHeaders.HOST, host);
         signedHeadersBuilder.put(HttpHeaders.HOST.toLowerCase(), host);
 
         // user-agent

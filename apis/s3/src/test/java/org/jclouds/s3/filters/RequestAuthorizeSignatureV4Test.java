@@ -178,7 +178,7 @@ public class RequestAuthorizeSignatureV4Test {
 
         HttpRequest putObject = GeneratedHttpRequest.builder().method("PUT")
                 .invocation(invocation)
-                .endpoint("https://" + BUCKET_NAME + "s3.cn-north-1.amazonaws.com.cn/" + OBJECT_NAME)
+                .endpoint("https://" + BUCKET_NAME + ".s3.cn-north-1.amazonaws.com.cn/" + OBJECT_NAME)
                 .addHeader(HttpHeaders.HOST, BUCKET_NAME + ".s3.cn-north-1.amazonaws.com.cn")
                 .addHeader("x-amz-storage-class", "REDUCED_REDUNDANCY")
                 .payload(payload)
