@@ -32,11 +32,11 @@
   <packaging>bundle</packaging>
 
   <properties>
-    <test.s3.endpoint>https://s3.amazonaws.com</test.s3.endpoint>
+    <test.s3.endpoint>https://s3.cn-north-1.amazonaws.com.cn</test.s3.endpoint>
     <test.s3.api-version>2006-03-01</test.s3.api-version>
     <test.s3.build-version />
-    <test.s3.identity>${test.aws.identity}</test.s3.identity>
-    <test.s3.credential>${test.aws.credential}</test.s3.credential>
+    <test.s3.identity>AKIAOUFDLL3W7BUYAFWA</test.s3.identity>
+    <test.s3.credential>L3lO8jI6FphomEhIieAhCth+nIIudjDHIGyehDhF </test.s3.credential>
 
     <jclouds.osgi.export>org.jclouds.s3*;version="${project.version}"</jclouds.osgi.export>
     <jclouds.osgi.import>org.jclouds*;version="${project.version}",*</jclouds.osgi.import>

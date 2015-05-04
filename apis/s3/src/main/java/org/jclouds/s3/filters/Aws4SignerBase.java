@@ -19,6 +19,7 @@ package org.jclouds.s3.filters;
 import com.google.common.base.Joiner;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.escape.Escaper;
@@ -47,6 +48,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TimeZone;
@@ -66,7 +68,6 @@ public abstract class Aws4SignerBase {
     private static final TimeZone GMT = TimeZone.getTimeZone("GMT");
     protected static final DateFormat timestampFormat;
     protected static final DateFormat dateFormat;
-
 
     // Do not URL-encode any of the unreserved characters that RFC 3986 defines:
     // A-Z, a-z, 0-9, hyphen (-), underscore (_), period (.), and tilde (~).
@@ -211,13 +212,16 @@ public abstract class Aws4SignerBase {
      */
     protected byte[] hmacSHA256(String toSign, byte[] key) {
         try {
-            ByteProcessor<byte[]> hmacSHA256 = asByteProcessor(crypto.hmacSHA256(key));
-            return readBytes(toInputStream(toSign), hmacSHA256);
+            return readBytes(toInputStream(toSign), hmacSHA256(crypto, key));
         } catch (IOException e) {
-            throw new HttpException("read bytes error", e);
+            throw new HttpException("read sign error", e);
         } catch (InvalidKeyException e) {
             throw new HttpException("invalid key", e);
         }
+    }
+
+    public static ByteProcessor<byte[]> hmacSHA256(Crypto crypto, byte[] signatureKey) throws InvalidKeyException {
+        return asByteProcessor(crypto.hmacSHA256(signatureKey));
     }
 
     /**
@@ -227,7 +231,7 @@ public abstract class Aws4SignerBase {
      * @return hash result
      * @throws HTTPException
      */
-    protected byte[] hash(InputStream input) throws HTTPException {
+    public static byte[] hash(InputStream input) throws HTTPException {
         try {
             Hasher hasher = Hashing.sha256().newHasher();
             byte[] buffer = new byte[4096];
@@ -242,13 +246,31 @@ public abstract class Aws4SignerBase {
     }
 
     /**
+     * hash input with sha256
+     *
+     * @param bytes input bytes
+     * @return hash result
+     * @throws HTTPException
+     */
+    public static byte[] hash(byte[] bytes) throws HTTPException {
+        try {
+            Hasher hasher = Hashing.sha256().newHasher();
+            hasher.putBytes(bytes);
+            return hasher.hash().asBytes();
+        } catch (Exception e) {
+            throw new HttpException("Unable to compute hash while signing request: " + e.getMessage(), e);
+        }
+    }
+
+
+    /**
      * hash string (encoding UTF_8) with sha256
      *
      * @param input input stream
      * @return hash result
      * @throws HTTPException
      */
-    protected byte[] hash(String input) throws HTTPException {
+    public static byte[] hash(String input) throws HTTPException {
         return hash(new ByteArrayInputStream(input.getBytes(UTF_8)));
     }
 
@@ -290,11 +312,21 @@ public abstract class Aws4SignerBase {
      * @param value the value to encode
      * @return the encoded value
      */
-    protected String urlEncode(final String value) {
+    public static String urlEncode(final String value) {
         if (value == null) {
             return "";
         }
         return AWS_URL_PARAMETER_ESCAPER.escape(value);
+    }
+
+    /**
+     * Lowercase base 16 encoding.
+     *
+     * @param bytes bytes
+     * @return base16 lower case hex string.
+     */
+    public static String hex(final byte[] bytes) {
+        return base16().lowerCase().encode(bytes);
     }
 
     /**
@@ -345,6 +377,10 @@ public abstract class Aws4SignerBase {
      */
     protected String createStringToSign(String method, URI endpoint, Map<String, String> signedHeaders,
             String timestamp, String credentialScope, String hashedPayload) {
+
+        // lower case header keys
+        Map<String, String> lowerCaseHeaders = lowerCaseNaturalOrderKeys(signedHeaders);
+
         StringBuilder canonicalRequest = new StringBuilder();
 
         // HTTPRequestMethod + '\n' +
@@ -360,13 +396,13 @@ public abstract class Aws4SignerBase {
         canonicalRequest.append("\n");
 
         // CanonicalHeaders + '\n' +
-        for (Map.Entry<String, String> entry : signedHeaders.entrySet()) {
+        for (Map.Entry<String, String> entry : lowerCaseHeaders.entrySet()) {
             canonicalRequest.append(entry.getKey()).append(':').append(entry.getValue()).append('\n');
         }
         canonicalRequest.append("\n");
 
         // SignedHeaders + '\n' +
-        canonicalRequest.append(Joiner.on(';').join(signedHeaders.keySet())).append('\n');
+        canonicalRequest.append(Joiner.on(';').join(lowerCaseHeaders.keySet())).append('\n');
 
         // HexEncode(Hash(Payload))
         canonicalRequest.append(hashedPayload);
@@ -382,9 +418,23 @@ public abstract class Aws4SignerBase {
         // CredentialScope + '\n' +
         toSign.append(credentialScope).append('\n');
         // HexEncode(Hash(CanonicalRequest))
-        toSign.append(base16().lowerCase().encode(hash(canonicalRequest.toString())));
+        toSign.append(hex(hash(canonicalRequest.toString())));
 
         return toSign.toString();
+    }
+
+    /**
+     * change the keys but keep the values in-tact.
+     *
+     * @param in input map to transform
+     * @return immutableSortedMap with the new lowercase keys.
+     */
+    protected static Map<String, String> lowerCaseNaturalOrderKeys(Map<String, String> in) {
+        checkNotNull(in, "input map");
+        ImmutableSortedMap.Builder<String, String> returnVal = ImmutableSortedMap.<String, String>naturalOrder();
+        for (Map.Entry<String, String> entry : in.entrySet())
+            returnVal.put(entry.getKey().toLowerCase(Locale.US), entry.getValue());
+        return returnVal.build();
     }
 
 }

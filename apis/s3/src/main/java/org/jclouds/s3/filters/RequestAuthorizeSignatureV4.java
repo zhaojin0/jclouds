@@ -19,30 +19,46 @@ package org.jclouds.s3.filters;
 import com.google.inject.Singleton;
 import org.jclouds.http.HttpException;
 import org.jclouds.http.HttpRequest;
+import org.jclouds.io.Payload;
 
 import javax.inject.Inject;
+import java.util.Locale;
 
 @Singleton
 public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
 
     private final Aws4SignerForAuthorizationHeader signerForAuthorizationHeader;
+    private final Aws4SignerForChunkedUpload signerForChunkedUpload;
     private final Aws4SignerForQueryString signerForQueryString;
 
     @Inject
     public RequestAuthorizeSignatureV4(Aws4SignerForAuthorizationHeader signerForAuthorizationHeader,
+            Aws4SignerForChunkedUpload signerForChunkedUpload,
             Aws4SignerForQueryString signerForQueryString) {
         this.signerForAuthorizationHeader = signerForAuthorizationHeader;
+        this.signerForChunkedUpload = signerForChunkedUpload;
         this.signerForQueryString = signerForQueryString;
     }
 
     @Override
     public HttpRequest filter(HttpRequest request) throws HttpException {
+        Payload payload = request.getPayload();
+        String method = request.getMethod();
+        // only HTTP PUT method, payload not null and cannot repeatable
+        if ("PUT".equals(method)
+                && payload != null && !payload.isRepeatable()) {
+            return signForChunkedUpload(request);
+        }
         return signForAuthorizationHeader(request);
     }
 
     protected HttpRequest signForAuthorizationHeader(HttpRequest request) {
         return signerForAuthorizationHeader.sign(request);
+    }
+
+    protected HttpRequest signForChunkedUpload(HttpRequest request) {
+        return signerForChunkedUpload.sign(request);
     }
 
     // Authenticating Requests by Using Query Parameters (AWS Signature Version 4)

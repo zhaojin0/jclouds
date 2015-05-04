@@ -18,6 +18,7 @@ package org.jclouds.aws.s3.filters;
 
 import org.jclouds.http.HttpRequest;
 import org.jclouds.s3.filters.Aws4SignerForAuthorizationHeader;
+import org.jclouds.s3.filters.Aws4SignerForChunkedUpload;
 import org.jclouds.s3.filters.Aws4SignerForQueryString;
 import org.jclouds.s3.filters.RequestAuthorizeSignatureV4;
 
@@ -35,8 +36,9 @@ public class AWSRequestAuthorizeSignatureV4 extends RequestAuthorizeSignatureV4 
 
     @Inject
     public AWSRequestAuthorizeSignatureV4(Aws4SignerForAuthorizationHeader signerForAuthorizationHeader,
+            Aws4SignerForChunkedUpload signerForChunkedUpload,
             Aws4SignerForQueryString signerForQueryString) {
-        super(signerForAuthorizationHeader, signerForQueryString);
+        super(signerForAuthorizationHeader, signerForChunkedUpload, signerForQueryString);
     }
 
     @Override

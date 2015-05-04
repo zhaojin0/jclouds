@@ -123,6 +123,13 @@ public abstract class AwsSignatureV4Constants {
      * employing chunked uploads
      */
     public static final String STREAMING_BODY_SHA256 = "STREAMING-AWS4-HMAC-SHA256-PAYLOAD";
+    public static final String CHUNK_STRING_TO_SIGN_PREFIX = "AWS4-HMAC-SHA256-PAYLOAD";
+
+    public static final String CLRF = "\r\n";
+
+    public static final String CHUNK_SIGNATURE_HEADER = ";chunk-signature=";
+    public static final int SIGNATURE_LENGTH = 64;
+    public static final byte[] FINAL_CHUNK = new byte[0];
 
     /**
      * Content-Encoding
