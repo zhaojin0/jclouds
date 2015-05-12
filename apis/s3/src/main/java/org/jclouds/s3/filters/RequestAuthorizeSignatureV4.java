@@ -47,7 +47,7 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
         String method = request.getMethod();
         // only HTTP PUT method, payload not null and cannot repeatable
         if ("PUT".equals(method)
-                && payload != null && !payload.isRepeatable()) {
+                && payload != null && payload.getContentMetadata().getContentLength() > 0 && !payload.isRepeatable()) {
             return signForChunkedUpload(request);
         }
         return signForAuthorizationHeader(request);

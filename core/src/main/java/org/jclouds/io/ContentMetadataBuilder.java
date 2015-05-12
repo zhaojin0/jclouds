@@ -50,9 +50,7 @@ public class ContentMetadataBuilder {
    }
 
    public ContentMetadataBuilder contentMD5(@Nullable HashCode contentMD5) {
-      if (contentMD5 != null) {
-         this.contentMD5 = contentMD5;
-      }
+      this.contentMD5 = contentMD5;
       return this;
    }
 
