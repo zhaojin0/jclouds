@@ -21,6 +21,7 @@ import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
+import com.google.common.hash.HashCode;
 import com.google.common.io.ByteProcessor;
 import com.google.common.net.HttpHeaders;
 import com.google.inject.Inject;
@@ -42,9 +43,7 @@ import java.util.Date;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.io.ByteStreams.readBytes;
-import static com.google.common.net.HttpHeaders.AUTHORIZATION;
-import static com.google.common.net.HttpHeaders.CONTENT_LENGTH;
-import static com.google.common.net.HttpHeaders.DATE;
+import static com.google.common.net.HttpHeaders.*;
 import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_ALGORITHM_HMAC_SHA256;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_CONTENT_SHA256_HEADER;
@@ -195,7 +194,10 @@ public class Aws4SignerForChunkedUpload extends Aws4SignerBase {
         ChunkedUploadPayload chunkedPayload = new ChunkedUploadPayload(payload, userDataBlockSize, timestamp,
                 credentialScope, hmacSHA256, signature);
 
-        return request.toBuilder()
+        // remove the user specified content md5 - it is replaced by chunked signatures
+        chunkedPayload.getContentMetadata().setContentMD5((byte[]) null);
+
+        return requestBuilder
                 .replaceHeader(HttpHeaders.AUTHORIZATION, authorization.toString())
                 .payload(chunkedPayload)
                 .build();
