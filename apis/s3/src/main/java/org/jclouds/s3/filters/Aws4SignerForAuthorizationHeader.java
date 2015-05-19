@@ -43,6 +43,7 @@ import java.util.Date;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.io.BaseEncoding.base16;
 import static com.google.common.net.HttpHeaders.AUTHORIZATION;
+import static com.google.common.net.HttpHeaders.CONTENT_MD5;
 import static com.google.common.net.HttpHeaders.DATE;
 import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_ALGORITHM_HMAC_SHA256;
@@ -81,6 +82,7 @@ public class Aws4SignerForAuthorizationHeader extends Aws4SignerBase {
 
         HttpRequest.Builder<?> requestBuilder = request.toBuilder() //
                 .removeHeader(AUTHORIZATION) // remove Authorization
+                .removeHeader(CONTENT_MD5) // aws s3 not allowed Content-MD5, use specs x-amz-content-sha256
                 .removeHeader(DATE); // remove date
 
         ImmutableMap.Builder<String, String> signedHeadersBuilder = ImmutableSortedMap.<String, String>naturalOrder();

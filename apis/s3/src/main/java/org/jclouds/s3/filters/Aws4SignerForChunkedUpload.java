@@ -44,6 +44,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.io.ByteStreams.readBytes;
 import static com.google.common.net.HttpHeaders.AUTHORIZATION;
 import static com.google.common.net.HttpHeaders.CONTENT_LENGTH;
+import static com.google.common.net.HttpHeaders.CONTENT_MD5;
 import static com.google.common.net.HttpHeaders.DATE;
 import static org.jclouds.aws.reference.AWSConstants.PROPERTY_HEADER_TAG;
 import static org.jclouds.s3.filters.AwsSignatureV4Constants.AMZ_ALGORITHM_HMAC_SHA256;
@@ -100,6 +101,7 @@ public class Aws4SignerForChunkedUpload extends Aws4SignerBase {
 
         HttpRequest.Builder<?> requestBuilder = request.toBuilder() //
                 .removeHeader(AUTHORIZATION) // remove Authorization
+                .removeHeader(CONTENT_MD5) // aws s3 not allowed Content-MD5, use aws specs x-amz-content-sha256
                 .removeHeader(DATE) // remove Date
                 .removeHeader(CONTENT_LENGTH); // remove Content-Length
 
