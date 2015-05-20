@@ -16,17 +16,22 @@
  */
 package org.jclouds.s3.filters;
 
+import com.google.common.reflect.TypeToken;
 import com.google.inject.Singleton;
 import org.jclouds.http.HttpException;
 import org.jclouds.http.HttpRequest;
 import org.jclouds.io.Payload;
+import org.jclouds.rest.internal.GeneratedHttpRequest;
+import org.jclouds.s3.S3Client;
 
 import javax.inject.Inject;
-import java.util.Locale;
 
 @Singleton
 public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
+    private static final String PUT_OBJECT_METHOD = "putObject";
+    private static final TypeToken<S3Client> S3_CLIENT_TYPE = new TypeToken<S3Client>() {
+    };
 
     private final Aws4SignerForAuthorizationHeader signerForAuthorizationHeader;
     private final Aws4SignerForChunkedUpload signerForChunkedUpload;
@@ -43,14 +48,33 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
 
     @Override
     public HttpRequest filter(HttpRequest request) throws HttpException {
-        Payload payload = request.getPayload();
-        String method = request.getMethod();
-        // only HTTP PUT method, payload not null and cannot repeatable
-        if ("PUT".equals(method)
-                && payload != null && !payload.isRepeatable()) {
+        // request use chunked upload
+        if (useChunkedUpload(request)) {
             return signForChunkedUpload(request);
         }
         return signForAuthorizationHeader(request);
+    }
+
+    /**
+     * returns true, if use AWS S3 chunked upload.
+     */
+    protected boolean useChunkedUpload(HttpRequest request) {
+        // only S3Client putObject method, payload not null, content-length > 0 and cannot repeatable
+        if (!GeneratedHttpRequest.class.isAssignableFrom(request.getClass())) {
+            return false;
+        }
+        GeneratedHttpRequest req = GeneratedHttpRequest.class.cast(request);
+
+        // s3 client type and method name is putObject
+        if (S3_CLIENT_TYPE.equals(req.getInvocation().getInvokable().getOwnerType()) &&
+                !PUT_OBJECT_METHOD.equals(req.getInvocation().getInvokable().getName())) {
+            return false;
+        }
+
+        Payload payload = req.getPayload();
+        Long contentLength = payload.getContentMetadata().getContentLength();
+
+        return contentLength > 0l && !payload.isRepeatable();
     }
 
     protected HttpRequest signForAuthorizationHeader(HttpRequest request) {
