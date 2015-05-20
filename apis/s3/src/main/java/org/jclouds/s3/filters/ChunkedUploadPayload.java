@@ -17,6 +17,7 @@
 package org.jclouds.s3.filters;
 
 import com.google.common.io.ByteProcessor;
+import com.google.common.io.ByteStreams;
 import org.jclouds.http.HttpException;
 import org.jclouds.io.MutableContentMetadata;
 import org.jclouds.io.Payload;
@@ -190,7 +191,7 @@ public class ChunkedUploadPayload extends BasePayload<Payload> {
         public InputStream nextElement() {
             int bytesRead;
             try {
-                bytesRead = inputStream.read(buffer, 0, buffer.length);
+                bytesRead = ByteStreams.read(inputStream, buffer, 0, buffer.length);
             } catch (IOException e) {
                 // IO EXCEPTION
                 throw new ChunkedUploadException("read from input stream error", e);
@@ -198,7 +199,10 @@ public class ChunkedUploadPayload extends BasePayload<Payload> {
 
             // buffer
             byte[] chunk;
-            if (bytesRead != -1) {
+
+            // ByteStreams.read(InputStream, byte[], int, int) returns the number of bytes read
+            // InputStream.read(byte[], int, int) returns -1 if the end of the stream has been reached.
+            if (bytesRead > 0) {
                 // process into a chunk
                 chunk = constructSignedChunk(bytesRead, buffer);
             } else {
