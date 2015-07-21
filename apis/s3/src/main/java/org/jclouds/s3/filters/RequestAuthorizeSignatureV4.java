@@ -72,7 +72,17 @@ public class RequestAuthorizeSignatureV4 implements RequestAuthorizeSignature {
         }
 
         Payload payload = req.getPayload();
+
+        // check payload null or payload.contentMetadata null
+        if (payload == null || payload.getContentMetadata() == null) {
+            return false;
+        }
+
         Long contentLength = payload.getContentMetadata().getContentLength();
+
+        if (contentLength == null) {
+            return false;
+        }
 
         return contentLength > 0l && !payload.isRepeatable();
     }
